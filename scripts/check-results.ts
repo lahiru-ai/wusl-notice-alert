@@ -24,13 +24,13 @@ const smtpPassword = process.env.SMTP_PASSWORD;
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error(
-    "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY."
+    "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
   );
 }
 
 if (!smtpHost || !smtpUser || !smtpPassword) {
   throw new Error(
-    "Missing SMTP_HOST, SMTP_USER or SMTP_PASSWORD."
+    "Missing SMTP_HOST, SMTP_USER or SMTP_PASSWORD"
   );
 }
 
@@ -58,26 +58,31 @@ const transporter = nodemailer.createTransport({
 });
 
 // -----------------------------------
+// Result type
+// -----------------------------------
+
+type Result = {
+  id?: string;
+  title: string;
+  url: string;
+  publishedDate: string | null;
+};
+
+// -----------------------------------
 // Send result notification
 // -----------------------------------
 
 async function sendResultEmail(
   email: string,
-  result: {
-    title: string;
-    url: string;
-    publishedDate: string | null;
-  }
+  result: Result
 ) {
   await transporter.sendMail({
     from: `"WUSL Notice Alert" <${smtpUser}>`,
-
     to: email,
-
-    subject: `📊 New WUSL Examination Result: ${result.title}`,
+    subject: `🎓 New WUSL Examination Result: ${result.title}`,
 
     text: `
-A new WUSL examination result has been published.
+A new examination result has been published.
 
 ${result.title}
 
@@ -87,8 +92,7 @@ ${result.publishedDate || "Not available"}
 View the result:
 ${result.url}
 
-You are receiving this email because you subscribed
-to WUSL examination result notifications.
+You are receiving this email because you subscribed to WUSL Notice Alert.
 `,
 
     html: `
@@ -107,7 +111,7 @@ to WUSL examination result notifications.
         ">
 
           <h1 style="color: #2563eb;">
-            📊 New WUSL Examination Result
+            🎓 New WUSL Examination Result
           </h1>
 
           <h2>
@@ -115,9 +119,8 @@ to WUSL examination result notifications.
           </h2>
 
           <p>
-            A new examination result has been published by
-            the Faculty of Applied Sciences,
-            Wayamba University of Sri Lanka.
+            A new examination result has been published by the
+            Faculty of Applied Sciences, Wayamba University of Sri Lanka.
           </p>
 
           <p>
@@ -137,7 +140,7 @@ to WUSL examination result notifications.
                 border-radius: 8px;
               "
             >
-              View Result →
+              View Examination Result →
             </a>
           </p>
 
@@ -152,11 +155,10 @@ to WUSL examination result notifications.
             color: #777;
           ">
             You are receiving this email because you subscribed
-            to WUSL examination result notifications.
+            to WUSL Notice Alert.
           </p>
 
         </div>
-
       </div>
     `,
   });
@@ -185,11 +187,7 @@ async function checkResults() {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    const results: {
-      title: string;
-      url: string;
-      publishedDate: string | null;
-    }[] = [];
+    const results: Result[] = [];
 
     // -----------------------------------
     // 2. Extract results
@@ -221,7 +219,7 @@ async function checkResults() {
       error: existingError,
     } = await supabase
       .from("results")
-      .select("url");
+      .select("id, url");
 
     if (existingError) {
       throw existingError;
@@ -246,13 +244,14 @@ async function checkResults() {
     );
 
     // -----------------------------------
-    // 5. Nothing new
+    // 5. No new results
     // -----------------------------------
 
     if (newResults.length === 0) {
       console.log(
         "✅ No new examination results."
       );
+
       return;
     }
 
@@ -260,7 +259,7 @@ async function checkResults() {
     // 6. Save new results
     // -----------------------------------
 
-    const { error: insertError } =
+    const { data: insertedResults, error: insertError } =
       await supabase
         .from("results")
         .insert(
@@ -269,7 +268,8 @@ async function checkResults() {
             url: result.url,
             published_date: result.publishedDate,
           }))
-        );
+        )
+        .select("id, title, url, published_date");
 
     if (insertError) {
       throw insertError;
@@ -288,7 +288,7 @@ async function checkResults() {
       error: subscriberError,
     } = await supabase
       .from("subscribers")
-      .select("email")
+      .select("id, email")
       .eq("result_enabled", true);
 
     if (subscriberError) {
@@ -308,30 +308,92 @@ async function checkResults() {
     }
 
     // -----------------------------------
-    // 8. Send emails
+    // 8. Send notifications
     // -----------------------------------
 
-    for (const result of newResults) {
+    for (const result of insertedResults || []) {
+
       console.log("");
-      console.log(`📊 ${result.title}`);
+      console.log(`🎓 ${result.title}`);
       console.log(`🔗 ${result.url}`);
 
       for (const subscriber of subscribers) {
+
+        // -----------------------------------
+        // Check notification log
+        // -----------------------------------
+
+        const {
+          data: existingLog,
+          error: logCheckError,
+        } = await supabase
+          .from("notification_logs")
+          .select("id")
+          .eq("subscriber_id", subscriber.id)
+          .eq("result_id", result.id)
+          .maybeSingle();
+
+        if (logCheckError) {
+          throw logCheckError;
+        }
+
+        // Already sent
+        if (existingLog) {
+          console.log(
+            `⏭️ Already sent to ${subscriber.email}`
+          );
+
+          continue;
+        }
+
+        // -----------------------------------
+        // Send email
+        // -----------------------------------
+
         try {
+
           await sendResultEmail(
             subscriber.email,
-            result
+            {
+              id: result.id,
+              title: result.title,
+              url: result.url,
+              publishedDate: result.published_date,
+            }
           );
 
           console.log(
             `📧 Email sent to ${subscriber.email}`
           );
 
+          // -----------------------------------
+          // Record successful notification
+          // -----------------------------------
+
+          const {
+            error: logInsertError,
+          } = await supabase
+            .from("notification_logs")
+            .insert({
+              subscriber_id: subscriber.id,
+              result_id: result.id,
+            });
+
+          if (logInsertError) {
+            throw logInsertError;
+          }
+
+          console.log(
+            `📝 Notification logged for ${subscriber.email}`
+          );
+
         } catch (emailError) {
+
           console.error(
-            `❌ Failed to send email to ${subscriber.email}`,
+            `❌ Failed to send result email to ${subscriber.email}`,
             emailError
           );
+
         }
       }
     }
@@ -342,7 +404,9 @@ async function checkResults() {
     );
 
   } catch (error) {
+
     console.error("❌ Error:", error);
+
     process.exit(1);
   }
 }
