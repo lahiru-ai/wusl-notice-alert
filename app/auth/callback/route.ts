@@ -6,12 +6,12 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
 
   const code = requestUrl.searchParams.get("code");
-  const notices = requestUrl.searchParams.get("notices") === "true";
-  const results = requestUrl.searchParams.get("results") === "true";
+  const next = requestUrl.searchParams.get("next");
 
+  // No authorization code
   if (!code) {
     return NextResponse.redirect(
-      new URL("/?error=verification_failed", requestUrl.origin)
+      new URL("/login?error=verification_failed", requestUrl.origin)
     );
   }
 
@@ -25,52 +25,116 @@ export async function GET(request: Request) {
         getAll() {
           return cookieStore.getAll();
         },
+
         setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
           } catch {
-            // Cookie setting can fail during some server rendering situations.
+            // Ignore cookie errors during rendering.
           }
         },
       },
     }
   );
 
-  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  // Exchange the PKCE authorization code for a session
+  const { data, error } =
+    await supabase.auth.exchangeCodeForSession(code);
 
   if (error || !data.user) {
+    console.error("Auth callback error:", error);
+
     return NextResponse.redirect(
-      new URL("/?error=verification_failed", requestUrl.origin)
+      new URL("/login?error=verification_failed", requestUrl.origin)
     );
   }
 
   const user = data.user;
 
-  const { error: subscriberError } = await supabase
-    .from("subscribers")
-    .upsert(
-      {
-        user_id: user.id,
-        email: user.email,
-        notice_enabled: notices,
-        result_enabled: results,
-      },
-      {
-        onConflict: "user_id",
-      }
-    );
-
-  if (subscriberError) {
-    console.error("Subscriber error:", subscriberError);
-
+  /*
+   * PASSWORD RESET
+   *
+   * If the reset-password flow sent us here with:
+   * ?next=/reset-password
+   *
+   * send the authenticated user to the password reset page.
+   */
+  if (next === "/reset-password") {
     return NextResponse.redirect(
-      new URL("/?error=subscription_failed", requestUrl.origin)
+      new URL("/reset-password", requestUrl.origin)
     );
   }
 
+  /*
+   * EMAIL VERIFICATION / NORMAL AUTH CALLBACK
+   *
+   * Check whether this user already has a subscriber record.
+   */
+  const {
+    data: existingSubscriber,
+    error: subscriberCheckError,
+  } = await supabase
+    .from("subscribers")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (subscriberCheckError) {
+    console.error(
+      "Subscriber check error:",
+      subscriberCheckError
+    );
+
+    return NextResponse.redirect(
+      new URL(
+        "/login?error=subscription_failed",
+        requestUrl.origin
+      )
+    );
+  }
+
+  /*
+   * Create subscriber record only if it doesn't exist.
+   */
+  if (!existingSubscriber) {
+    const { error: insertError } = await supabase
+      .from("subscribers")
+      .insert({
+        user_id: user.id,
+        email: user.email,
+        notice_enabled: true,
+        result_enabled: true,
+      });
+
+    if (insertError) {
+      console.error(
+        "Subscriber creation error:",
+        insertError
+      );
+
+      return NextResponse.redirect(
+        new URL(
+          "/login?error=subscription_failed",
+          requestUrl.origin
+        )
+      );
+    }
+  } else {
+    // Keep existing notification preferences.
+    await supabase
+      .from("subscribers")
+      .update({
+        email: user.email,
+      })
+      .eq("user_id", user.id);
+  }
+
+  /*
+   * Normal email verification completed.
+   */
   return NextResponse.redirect(
-    new URL("/success", requestUrl.origin)
+    new URL("/dashboard", requestUrl.origin)
   );
 }
