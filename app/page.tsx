@@ -1,249 +1,319 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { createClient } from "@/lib/supabase";
+import Link from "next/link";
 
-export default function Home() {
-  const supabase = createClient();
-
-  const [email, setEmail] = useState("");
-  const [notices, setNotices] = useState(true);
-  const [results, setResults] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  async function handleSubscribe(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    setLoading(true);
-    setMessage("");
-    setError("");
-
-    if (!notices && !results) {
-      setError("Please select at least one notification type.");
-      setLoading(false);
-      return;
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (!cleanEmail) {
-      setError("Please enter your email address.");
-      setLoading(false);
-      return;
-    }
-
-    const { error } = await supabase.auth.signInWithOtp({
-      email: cleanEmail,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?notices=${notices}&results=${results}`,
-      },
-    });
-
-    if (error) {
-      setError(error.message);
-    } else {
-      setMessage(
-        "Check your email. We sent you a secure verification link."
-      );
-      setEmail("");
-    }
-
-    setLoading(false);
-  }
-
+export default function HomePage() {
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      {/* Navigation */}
-      <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-xl">
+    <main className="min-h-screen bg-[#020617] text-white">
+      {/* =========================
+          HEADER
+      ========================== */}
+      <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-6">
+        {/* Logo / Brand */}
+        <Link href="/" className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-xl">
             🎓
           </div>
 
           <div>
-            <h1 className="font-bold tracking-tight">WUSL Notice Alert</h1>
-            <p className="text-xs text-slate-400">Faculty of Applied Sciences</p>
+            <h1 className="text-lg font-bold leading-tight">
+              WUSL Notice Alert
+            </h1>
+
+            <p className="text-sm text-slate-400">
+              Faculty of Applied Sciences
+            </p>
           </div>
-        </div>
+        </Link>
 
-        <div className="hidden rounded-full border border-slate-800 px-4 py-2 text-sm text-slate-400 sm:block">
-          Free notification service
-        </div>
-      </nav>
+        {/* Navigation */}
+        <div className="flex items-center gap-3">
+          <Link
+            href="/login"
+            className="rounded-xl border border-slate-700 px-5 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-blue-500 hover:text-blue-400"
+          >
+            Log In
+          </Link>
 
-      {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 pb-20 pt-12">
-        <div className="grid items-center gap-14 lg:grid-cols-2">
-          {/* Left */}
+          <Link
+            href="/signup"
+            className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
+          >
+            Sign Up
+          </Link>
+        </div>
+      </header>
+
+      {/* =========================
+          HERO SECTION
+      ========================== */}
+      <section className="mx-auto max-w-7xl px-6 pb-20 pt-16">
+        <div className="grid items-center gap-12 lg:grid-cols-2">
+          {/* LEFT SIDE */}
           <div>
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-sm text-blue-300">
+            {/* Badge */}
+            <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm text-blue-400">
               <span className="h-2 w-2 rounded-full bg-blue-400" />
               Automated university alerts
             </div>
 
-            <h2 className="max-w-3xl text-5xl font-black leading-tight tracking-tight sm:text-6xl">
+            {/* Heading */}
+            <h2 className="max-w-2xl text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl">
               Never miss an important{" "}
-              <span className="text-blue-400">university update.</span>
+              <span className="text-blue-400">
+                university update.
+              </span>
             </h2>
 
-            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-400">
+            {/* Description */}
+            <p className="mt-8 max-w-xl text-lg leading-8 text-slate-400">
               Get notified by email when new university notices and
               examination results are published.
             </p>
 
-            <div className="mt-8 grid gap-4 sm:grid-cols-2">
-              <Feature
-                icon="📢"
-                title="New Notices"
-                text="Receive important university announcements."
-              />
+            {/* Feature Cards */}
+            <div className="mt-12 grid gap-5 sm:grid-cols-2">
+              {/* New Notices */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 transition hover:border-blue-500/40">
+                <div className="mb-5 text-2xl">
+                  📢
+                </div>
 
-              <Feature
-                icon="📊"
-                title="Exam Results"
-                text="Know when new results are published."
-              />
+                <h3 className="text-lg font-bold">
+                  New Notices
+                </h3>
 
-              <Feature
-                icon="⚡"
-                title="Automatic"
-                text="The system checks the university website automatically."
-              />
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Receive important university announcements.
+                </p>
+              </div>
 
-              <Feature
-                icon="🔒"
-                title="Verified Email"
-                text="Only verified email addresses receive alerts."
-              />
+              {/* Exam Results */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 transition hover:border-blue-500/40">
+                <div className="mb-5 text-2xl">
+                  📊
+                </div>
+
+                <h3 className="text-lg font-bold">
+                  Exam Results
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Know when new results are published.
+                </p>
+              </div>
+
+              {/* Automatic */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 transition hover:border-blue-500/40">
+                <div className="mb-5 text-2xl">
+                  ⚡
+                </div>
+
+                <h3 className="text-lg font-bold">
+                  Automatic
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Notices are checked automatically for new updates.
+                </p>
+              </div>
+
+              {/* Verified Email */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 transition hover:border-blue-500/40">
+                <div className="mb-5 text-2xl">
+                  🔐
+                </div>
+
+                <h3 className="text-lg font-bold">
+                  Verified Email
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Your account is protected with secure authentication.
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Subscription card */}
-          <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-7 shadow-2xl shadow-blue-950/20 sm:p-9">
-            <div className="mb-7">
-              <p className="text-sm font-semibold uppercase tracking-widest text-blue-400">
-                Subscribe
-              </p>
+          {/* =========================
+              RIGHT SIDE
+          ========================== */}
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-7 shadow-2xl sm:p-9">
+            {/* Label */}
+            <p className="text-sm font-bold tracking-[0.18em] text-blue-400">
+              GET STARTED
+            </p>
 
-              <h3 className="mt-2 text-3xl font-bold">
-                Get alerts in your inbox
-              </h3>
+            <h3 className="mt-3 text-3xl font-bold">
+              Get alerts in your inbox
+            </h3>
 
-              <p className="mt-3 text-sm leading-6 text-slate-400">
-                Enter your email and choose the notifications you want.
-                We&apos;ll send you a secure verification link.
-              </p>
+            <p className="mt-4 leading-7 text-slate-400">
+              Create an account and choose the university notifications
+              you want to receive.
+            </p>
+
+            {/* Notification options */}
+            <div className="mt-8 space-y-4">
+              {/* Notices */}
+              <div className="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-600 text-sm">
+                  ✓
+                </div>
+
+                <div>
+                  <h4 className="font-semibold">
+                    University Notices
+                  </h4>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Important announcements and notices
+                  </p>
+                </div>
+              </div>
+
+              {/* Results */}
+              <div className="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-600 text-sm">
+                  ✓
+                </div>
+
+                <div>
+                  <h4 className="font-semibold">
+                    Examination Results
+                  </h4>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Notifications when new results appear
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <form onSubmit={handleSubscribe} className="space-y-5">
-              <div>
-                <label
-                  htmlFor="email"
-                  className="mb-2 block text-sm font-medium text-slate-200"
-                >
-                  Email address
-                </label>
+            {/* Main CTA */}
+            <Link
+              href="/signup"
+              className="mt-7 flex w-full items-center justify-center rounded-xl bg-blue-600 px-5 py-4 font-bold text-white transition hover:bg-blue-500"
+            >
+              Create Your Free Account →
+            </Link>
 
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="student@example.com"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3.5 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:border-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={notices}
-                    onChange={(e) => setNotices(e.target.checked)}
-                    className="h-5 w-5 accent-blue-500"
-                  />
-
-                  <div>
-                    <p className="font-medium">University Notices</p>
-                    <p className="text-sm text-slate-500">
-                      Important announcements and notices
-                    </p>
-                  </div>
-                </label>
-
-                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:border-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={results}
-                    onChange={(e) => setResults(e.target.checked)}
-                    className="h-5 w-5 accent-blue-500"
-                  />
-
-                  <div>
-                    <p className="font-medium">Examination Results</p>
-                    <p className="text-sm text-slate-500">
-                      Notifications when new results appear
-                    </p>
-                  </div>
-                </label>
-              </div>
-
-              {error && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
-                  {error}
-                </div>
-              )}
-
-              {message && (
-                <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-4 text-sm text-green-300">
-                  {message}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-xl bg-blue-600 px-5 py-4 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+            {/* Login */}
+            <p className="mt-5 text-center text-sm text-slate-500">
+              Already have an account?{" "}
+              <Link
+                href="/login"
+                className="font-semibold text-blue-400 hover:text-blue-300"
               >
-                {loading ? "Sending verification..." : "Subscribe for Free →"}
-              </button>
-            </form>
+                Log in
+              </Link>
+            </p>
 
-            <p className="mt-5 text-center text-xs leading-5 text-slate-600">
-              No password required. You can unsubscribe from notifications
-              anytime.
+            {/* Security */}
+            <p className="mt-7 text-center text-xs text-slate-600">
+              🔐 Secure authentication powered by Supabase
             </p>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-900 py-8">
-        <div className="mx-auto max-w-6xl px-6 text-center text-sm text-slate-600">
-          WUSL Notice Alert · Automated notification service
+      {/* =========================
+          HOW IT WORKS
+      ========================== */}
+      <section className="border-t border-slate-900 bg-slate-950/30">
+        <div className="mx-auto max-w-7xl px-6 py-20">
+          <div className="text-center">
+            <p className="text-sm font-bold tracking-[0.18em] text-blue-400">
+              HOW IT WORKS
+            </p>
+
+            <h2 className="mt-3 text-3xl font-bold">
+              Simple. Automatic. Reliable.
+            </h2>
+
+            <p className="mx-auto mt-4 max-w-2xl text-slate-400">
+              Set up your account once and let WUSL Notice Alert keep
+              watch for important university updates.
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-6 md:grid-cols-3">
+            {/* Step 1 */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-7">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-bold">
+                1
+              </div>
+
+              <h3 className="mt-5 text-xl font-bold">
+                Create an account
+              </h3>
+
+              <p className="mt-3 leading-7 text-slate-400">
+                Sign up using your email address and verify your account.
+              </p>
+            </div>
+
+            {/* Step 2 */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-7">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-bold">
+                2
+              </div>
+
+              <h3 className="mt-5 text-xl font-bold">
+                Choose notifications
+              </h3>
+
+              <p className="mt-3 leading-7 text-slate-400">
+                Select whether you want university notices, examination
+                results, or both.
+              </p>
+            </div>
+
+            {/* Step 3 */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-7">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-bold">
+                3
+              </div>
+
+              <h3 className="mt-5 text-xl font-bold">
+                Receive alerts
+              </h3>
+
+              <p className="mt-3 leading-7 text-slate-400">
+                Receive an email when a new university update is
+                published.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================
+          FOOTER
+      ========================== */}
+      <footer className="border-t border-slate-900">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-slate-500 sm:flex-row">
+          <p>
+            © {new Date().getFullYear()} WUSL Notice Alert
+          </p>
+
+          <div className="flex items-center gap-5">
+            <Link
+              href="/login"
+              className="transition hover:text-blue-400"
+            >
+              Log In
+            </Link>
+
+            <Link
+              href="/signup"
+              className="transition hover:text-blue-400"
+            >
+              Sign Up
+            </Link>
+          </div>
         </div>
       </footer>
     </main>
-  );
-}
-
-function Feature({
-  icon,
-  title,
-  text,
-}: {
-  icon: string;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-      <div className="mb-3 text-xl">{icon}</div>
-      <h3 className="font-semibold">{title}</h3>
-      <p className="mt-1 text-sm leading-5 text-slate-500">{text}</p>
-    </div>
   );
 }
