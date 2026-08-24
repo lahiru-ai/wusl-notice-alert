@@ -1,14 +1,10 @@
-import dotenv from "dotenv";
-import path from "path";
 import * as cheerio from "cheerio";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
 
-dotenv.config({
-  path: path.resolve(process.cwd(), ".env.local"),
-});
-
 const RESULTS_URL = "https://fas.wyb.ac.lk/results/";
+
+const DRY_RUN = process.env.DRY_RUN === "true";
 
 // -----------------------------------
 // Environment variables
@@ -171,6 +167,12 @@ You are receiving this email because you subscribed to WUSL Notice Alert.
 async function checkResults() {
   console.log("🔍 Checking WUSL examination results...");
 
+  if (DRY_RUN) {
+    console.log("🧪 DRY RUN MODE ENABLED");
+    console.log("📧 No result emails will be sent.");
+    console.log("💾 No new results will be saved.");
+  }
+
   try {
     // -----------------------------------
     // 1. Download results page
@@ -256,20 +258,48 @@ async function checkResults() {
     }
 
     // -----------------------------------
-    // 6. Save new results
+    // 6. DRY RUN
     // -----------------------------------
 
-    const { data: insertedResults, error: insertError } =
-      await supabase
-        .from("results")
-        .insert(
-          newResults.map((result) => ({
-            title: result.title,
-            url: result.url,
-            published_date: result.publishedDate,
-          }))
-        )
-        .select("id, title, url, published_date");
+    if (DRY_RUN) {
+      console.log("");
+      console.log(
+        "🧪 New results detected, but nothing will be saved or emailed."
+      );
+
+      for (const result of newResults) {
+        console.log(`🎓 ${result.title}`);
+        console.log(`🔗 ${result.url}`);
+        console.log(
+          "🧪 DRY RUN: Would save this result and notify subscribed users."
+        );
+      }
+
+      console.log("");
+      console.log(
+        "🧪 DRY RUN completed. No result emails were sent."
+      );
+
+      return;
+    }
+
+    // -----------------------------------
+    // 7. Save new results
+    // -----------------------------------
+
+    const {
+      data: insertedResults,
+      error: insertError,
+    } = await supabase
+      .from("results")
+      .insert(
+        newResults.map((result) => ({
+          title: result.title,
+          url: result.url,
+          published_date: result.publishedDate,
+        }))
+      )
+      .select("id, title, url, published_date");
 
     if (insertError) {
       throw insertError;
@@ -280,7 +310,7 @@ async function checkResults() {
     );
 
     // -----------------------------------
-    // 7. Get result subscribers
+    // 8. Get result subscribers
     // -----------------------------------
 
     const {
@@ -296,7 +326,9 @@ async function checkResults() {
     }
 
     console.log(
-      `👥 Result subscribers: ${subscribers?.length || 0}`
+      `👥 Result subscribers: ${
+        subscribers?.length || 0
+      }`
     );
 
     if (!subscribers || subscribers.length === 0) {
@@ -308,11 +340,10 @@ async function checkResults() {
     }
 
     // -----------------------------------
-    // 8. Send notifications
+    // 9. Send notifications
     // -----------------------------------
 
     for (const result of insertedResults || []) {
-
       console.log("");
       console.log(`🎓 ${result.title}`);
       console.log(`🔗 ${result.url}`);
@@ -337,7 +368,6 @@ async function checkResults() {
           throw logCheckError;
         }
 
-        // Already sent
         if (existingLog) {
           console.log(
             `⏭️ Already sent to ${subscriber.email}`
@@ -351,7 +381,6 @@ async function checkResults() {
         // -----------------------------------
 
         try {
-
           await sendResultEmail(
             subscriber.email,
             {
@@ -388,12 +417,10 @@ async function checkResults() {
           );
 
         } catch (emailError) {
-
           console.error(
             `❌ Failed to send result email to ${subscriber.email}`,
             emailError
           );
-
         }
       }
     }
@@ -404,9 +431,7 @@ async function checkResults() {
     );
 
   } catch (error) {
-
     console.error("❌ Error:", error);
-
     process.exit(1);
   }
 }
