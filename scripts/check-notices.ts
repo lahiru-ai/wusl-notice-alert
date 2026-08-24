@@ -1,12 +1,6 @@
-import dotenv from "dotenv";
-import path from "path";
 import * as cheerio from "cheerio";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
-
-dotenv.config({
-  path: path.resolve(process.cwd(), ".env.local"),
-});
 
 const NOTICES_URL = "https://fas.wyb.ac.lk/notices/";
 
@@ -25,15 +19,21 @@ const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpUser = process.env.SMTP_USER;
 const smtpPassword = process.env.SMTP_PASSWORD;
 
+const DRY_RUN = process.env.DRY_RUN === "true";
+
+// -----------------------------------
+// Validate environment variables
+// -----------------------------------
+
 if (!supabaseUrl || !supabaseKey) {
   throw new Error(
-    "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local"
+    "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
   );
 }
 
 if (!smtpHost || !smtpUser || !smtpPassword) {
   throw new Error(
-    "Missing SMTP_HOST, SMTP_USER or SMTP_PASSWORD in .env.local"
+    "Missing SMTP_HOST, SMTP_USER or SMTP_PASSWORD"
   );
 }
 
@@ -140,7 +140,11 @@ You are receiving this email because you subscribed to WUSL Notice Alert.
             </a>
           </p>
 
-          <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+          <hr style="
+            margin: 30px 0;
+            border: none;
+            border-top: 1px solid #ddd;
+          ">
 
           <p style="font-size: 12px; color: #777;">
             You are receiving this email because you subscribed
@@ -160,6 +164,11 @@ You are receiving this email because you subscribed to WUSL Notice Alert.
 
 async function checkNotices() {
   console.log("🔍 Checking WUSL notices...");
+
+  if (DRY_RUN) {
+    console.log("🧪 DRY RUN MODE ENABLED");
+    console.log("📧 No emails will be sent.");
+  }
 
   try {
     // -----------------------------------
@@ -240,10 +249,12 @@ async function checkNotices() {
     // 3. Get existing notices
     // -----------------------------------
 
-    const { data: existingNotices, error: existingError } =
-      await supabase
-        .from("notices")
-        .select("url");
+    const {
+      data: existingNotices,
+      error: existingError,
+    } = await supabase
+      .from("notices")
+      .select("url");
 
     if (existingError) {
       throw existingError;
@@ -302,18 +313,22 @@ async function checkNotices() {
     // 7. Get notice subscribers
     // -----------------------------------
 
-    const { data: subscribers, error: subscriberError } =
-      await supabase
-        .from("subscribers")
-        .select("email")
-        .eq("notice_enabled", true);
+    const {
+      data: subscribers,
+      error: subscriberError,
+    } = await supabase
+      .from("subscribers")
+      .select("email")
+      .eq("notice_enabled", true);
 
     if (subscriberError) {
       throw subscriberError;
     }
 
     console.log(
-      `👥 Notice subscribers: ${subscribers?.length || 0}`
+      `👥 Notice subscribers: ${
+        subscribers?.length || 0
+      }`
     );
 
     if (!subscribers || subscribers.length === 0) {
@@ -335,14 +350,20 @@ async function checkNotices() {
 
       for (const subscriber of subscribers) {
         try {
-          await sendNotificationEmail(
-            subscriber.email,
-            notice
-          );
+          if (DRY_RUN) {
+            console.log(
+              `🧪 DRY RUN: Would send email to ${subscriber.email}`
+            );
+          } else {
+            await sendNotificationEmail(
+              subscriber.email,
+              notice
+            );
 
-          console.log(
-            `📧 Email sent to ${subscriber.email}`
-          );
+            console.log(
+              `📧 Email sent to ${subscriber.email}`
+            );
+          }
         } catch (emailError) {
           console.error(
             `❌ Failed to send email to ${subscriber.email}`,
@@ -353,7 +374,11 @@ async function checkNotices() {
     }
 
     console.log("");
-    console.log("🎉 Notification process completed.");
+    console.log(
+      DRY_RUN
+        ? "🧪 DRY RUN completed. No emails were sent."
+        : "🎉 Notification process completed."
+    );
 
   } catch (error) {
     console.error("❌ Error:", error);

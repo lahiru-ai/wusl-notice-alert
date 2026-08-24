@@ -31,6 +31,7 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          DRY_RUN: "true"
 
       - name: Check WUSL examination results
         run: npx tsx scripts/check-results.ts
