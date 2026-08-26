@@ -49,7 +49,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (!isAdminEmail(user.email || "")) {
+  const { getAdminEmails } = await import("@/lib/admin-config");
+  const adminEmails = getAdminEmails();
+  const match = isAdminEmail(user.email || "");
+  console.error("[admin-diag]", JSON.stringify({
+    authenticated: true,
+    env_admin_emails_set: !!process.env.ADMIN_EMAILS,
+    env_admin_emails_raw_length: (process.env.ADMIN_EMAILS || "").length,
+    admin_email_count: adminEmails.length,
+    admin_email_match: match,
+  }));
+
+  if (!match) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
