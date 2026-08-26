@@ -10,7 +10,6 @@ export async function GET(request: NextRequest) {
 
     if (!expectedSecret) {
       console.error("CRON_SECRET is not configured");
-
       return NextResponse.json(
         { error: "Server configuration error" },
         { status: 500 }
@@ -18,30 +17,57 @@ export async function GET(request: NextRequest) {
     }
 
     if (authHeader !== `Bearer ${expectedSecret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const githubToken = process.env.GITHUB_PAT;
+
+    if (!githubToken) {
+      console.error("GITHUB_PAT is not configured");
       return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
+        { error: "Server configuration error" },
+        { status: 500 }
       );
     }
 
-    /*
-     * We will connect your existing notice-checking
-     * logic here in the next step.
-     */
+    const repoOwner = "lahiru-ai";
+    const repoName = "wusl-notice-alert";
+
+    const response = await fetch(
+      `https://api.github.com/repos/${repoOwner}/${repoName}/dispatches`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${githubToken}`,
+          Accept: "application/vnd.github.v3+json",
+          "Content-Type": "application/json",
+          "User-Agent": "wusl-notice-alert-cron",
+        },
+        body: JSON.stringify({ event_type: "check-notices" }),
+      }
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.error(
+        `GitHub dispatch failed: ${response.status} ${response.statusText}`,
+        body
+      );
+      return NextResponse.json(
+        { error: "Failed to trigger workflow" },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      message: "Notice checker endpoint is working",
+      message: "GitHub Actions workflow triggered",
       time: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Cron error:", error);
-
     return NextResponse.json(
-      {
-        success: false,
-        error: "Internal server error",
-      },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }
