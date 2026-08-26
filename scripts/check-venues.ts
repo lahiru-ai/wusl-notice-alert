@@ -4,11 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 import {
   sendWhatsAppMessage,
   sendWhatsAppDocument,
-  formatNoticeWhatsAppMessage,
+  formatVenueWhatsAppMessage,
 } from "../lib/whatsapp";
 import { findPdfUrl, fetchPdfBuffer } from "../lib/pdf";
 
-const NOTICES_URL = "https://fas.wyb.ac.lk/notices/";
+const VENUES_URL =
+  "https://fas.wyb.ac.lk/examination-venues/";
 
 const MONTHS =
   "January|February|March|April|May|June|July|August|September|October|November|December";
@@ -47,10 +48,7 @@ if (!smtpHost || !smtpUser || !smtpPassword) {
 // Supabase
 // -----------------------------------
 
-const supabase = createClient(
-  supabaseUrl,
-  supabaseKey
-);
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // -----------------------------------
 // Gmail SMTP
@@ -67,16 +65,117 @@ const transporter = nodemailer.createTransport({
 });
 
 // -----------------------------------
-// Send notification email
+// Venue type
 // -----------------------------------
 
-async function sendNotificationEmail(
+type VenueEntry = {
+  title: string;
+  url: string;
+  publishedDate: string | null;
+  excerpt: string;
+};
+
+// -----------------------------------
+// Parse a human-readable date string
+// into YYYY-MM-DD
+// -----------------------------------
+
+function parseDate(raw: string): string | null {
+  const match = raw.match(
+    new RegExp(
+      `(${MONTHS})\\s+\\d{1,2},\\s+\\d{4}`,
+      "i"
+    )
+  );
+
+  if (!match) return null;
+
+  const parsed = new Date(match[0]);
+
+  if (isNaN(parsed.getTime())) return null;
+
+  return parsed.toISOString().split("T")[0];
+}
+
+// -----------------------------------
+// Fetch a single page and extract
+// venue entries
+// -----------------------------------
+
+async function fetchVenuePage(
+  pageUrl: string
+): Promise<VenueEntry[]> {
+  const response = await fetch(pageUrl);
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch venue page: ${response.status} ${pageUrl}`
+    );
+  }
+
+  const html = await response.text();
+  const $ = cheerio.load(html);
+  const entries: VenueEntry[] = [];
+
+  $("article.elementor-post").each((_, element) => {
+    const titleEl = $(element).find(
+      "h3.elementor-post__title a"
+    );
+
+    const title = titleEl.text().trim();
+    const href = titleEl.attr("href");
+
+    if (!title || !href) return;
+
+    const url = new URL(href, VENUES_URL).href;
+
+    const rawDate = $(element)
+      .find("span.elementor-post-date")
+      .text()
+      .trim();
+
+    const publishedDate = rawDate
+      ? parseDate(rawDate)
+      : null;
+
+    const excerpt = $(element)
+      .find("div.elementor-post__excerpt")
+      .text()
+      .trim();
+
+    entries.push({
+      title,
+      url,
+      publishedDate,
+      excerpt,
+    });
+  });
+
+  return entries;
+}
+
+// -----------------------------------
+// Determine total pages from the
+// load-more anchor on page 1
+// -----------------------------------
+
+function getMaxPages(html: string): number {
+  const $ = cheerio.load(html);
+  const anchor = $("div.e-load-more-anchor");
+  const max = parseInt(
+    anchor.attr("data-max-page") || "1",
+    10
+  );
+  return isNaN(max) ? 1 : max;
+}
+
+// -----------------------------------
+// Send venue notification email
+// -----------------------------------
+
+async function sendVenueEmail(
   email: string,
-  notice: {
-    title: string;
-    url: string;
-    publishedDate: string | null;
-  },
+  venue: VenueEntry,
   pdfUrl?: string | null
 ) {
   let attachments: nodemailer.SendMailOptions["attachments"] = [];
@@ -87,7 +186,7 @@ async function sendNotificationEmail(
     if (pdfBuffer) {
       attachments = [
         {
-          filename: "notice.pdf",
+          filename: "venue.pdf",
           content: pdfBuffer,
         },
       ];
@@ -122,19 +221,21 @@ async function sendNotificationEmail(
   await transporter.sendMail({
     from: `"WUSL Notice Alert" <${smtpUser}>`,
     to: email,
-    subject: `📢 New WUSL Notice: ${notice.title}`,
+    subject: `🏫 New Examination Venue: ${venue.title}`,
     attachments,
 
     text: `
-A new WUSL notice has been published.
+An examination venue notice has been published.
 
-${notice.title}
+${venue.title}
 
 Published date:
-${notice.publishedDate || "Not available"}
+${venue.publishedDate || "Not available"}
+
+${venue.excerpt ? `Details:\n${venue.excerpt}\n` : ""}
 ${pdfLinkText}
-View the notice:
-${notice.url}
+View the venue notice:
+${venue.url}
 
 You are receiving this email because you subscribed to WUSL Notice Alert.
 `,
@@ -155,28 +256,40 @@ You are receiving this email because you subscribed to WUSL Notice Alert.
         ">
 
           <h1 style="color: #2563eb;">
-            📢 New WUSL Notice
+            🏫 New Examination Venue
           </h1>
 
           <h2>
-            ${notice.title}
+            ${venue.title}
           </h2>
 
           <p>
-            A new notice has been published by the
+            An examination venue notice has been published by the
             Faculty of Applied Sciences, Wayamba University of Sri Lanka.
           </p>
 
           <p>
             <strong>Published date:</strong>
-            ${notice.publishedDate || "Not available"}
+            ${venue.publishedDate || "Not available"}
           </p>
+
+          ${venue.excerpt ? `
+          <p style="
+            background: #f0f4ff;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+          ">
+            ${venue.excerpt}
+          </p>
+          ` : ""}
 
           ${pdfLinkHtml}
 
           <p style="margin-top: 25px;">
             <a
-              href="${notice.url}"
+              href="${venue.url}"
               style="
                 display: inline-block;
                 padding: 12px 20px;
@@ -186,7 +299,7 @@ You are receiving this email because you subscribed to WUSL Notice Alert.
                 border-radius: 8px;
               "
             >
-              View Notice
+              View Venue Details
             </a>
           </p>
 
@@ -212,8 +325,8 @@ You are receiving this email because you subscribed to WUSL Notice Alert.
 // Main checker
 // -----------------------------------
 
-async function checkNotices() {
-  console.log("🔍 Checking WUSL notices...");
+async function checkVenues() {
+  console.log("🔍 Checking WUSL examination venues...");
 
   if (DRY_RUN) {
     console.log("🧪 DRY RUN MODE ENABLED");
@@ -222,88 +335,91 @@ async function checkNotices() {
 
   try {
     // -----------------------------------
-    // 1. Download WUSL notices page
+    // 1. Fetch page 1 to determine
+    //    total pages
     // -----------------------------------
 
-    const response = await fetch(NOTICES_URL);
+    const firstResponse = await fetch(VENUES_URL);
 
-    if (!response.ok) {
+    if (!firstResponse.ok) {
       throw new Error(
-        `Failed to fetch notices: ${response.status}`
+        `Failed to fetch venue page: ${firstResponse.status}`
       );
     }
 
-    const html = await response.text();
-    const $ = cheerio.load(html);
+    const firstHtml = await firstResponse.text();
+    const maxPages = getMaxPages(firstHtml);
 
-    const notices: {
-      title: string;
-      url: string;
-      publishedDate: string | null;
-    }[] = [];
+    console.log(
+      `📄 Found ${maxPages} page(s) of venue entries.`
+    );
 
     // -----------------------------------
-    // 2. Extract notices
+    // 2. Extract entries from all pages
     // -----------------------------------
 
-    $("h3").each((_, element) => {
-      const title = $(element).text().trim();
-      const link = $(element).find("a").attr("href");
+    const allEntries: VenueEntry[] = [];
 
-      if (!title || !link) return;
+    // Page 1 was already fetched
+    const $ = cheerio.load(firstHtml);
 
-      const url = new URL(link, NOTICES_URL).href;
+    $("article.elementor-post").each((_, element) => {
+      const titleEl = $(element).find(
+        "h3.elementor-post__title a"
+      );
 
-      let publishedDate: string | null = null;
+      const title = titleEl.text().trim();
+      const href = titleEl.attr("href");
 
-      let current = $(element);
+      if (!title || !href) return;
 
-      for (let level = 0; level < 6; level++) {
-        const text = current
-          .text()
-          .replace(/\s+/g, " ")
-          .trim();
+      const url = new URL(href, VENUES_URL).href;
 
-        const match = text.match(
-          new RegExp(
-            `(${MONTHS})\\s+\\d{1,2},\\s+\\d{4}`,
-            "i"
-          )
-        );
+      const rawDate = $(element)
+        .find("span.elementor-post-date")
+        .text()
+        .trim();
 
-        if (match) {
-          const parsedDate = new Date(match[0]);
+      const publishedDate = rawDate
+        ? parseDate(rawDate)
+        : null;
 
-          if (!isNaN(parsedDate.getTime())) {
-            publishedDate = parsedDate
-              .toISOString()
-              .split("T")[0];
-          }
+      const excerpt = $(element)
+        .find("div.elementor-post__excerpt")
+        .text()
+        .trim();
 
-          break;
-        }
-
-        current = current.parent();
-      }
-
-      notices.push({
+      allEntries.push({
         title,
         url,
         publishedDate,
+        excerpt,
       });
     });
 
-    console.log(`📋 Found ${notices.length} notices.`);
+    // Fetch remaining pages
+    for (let page = 2; page <= maxPages; page++) {
+      const pageUrl = `${VENUES_URL}${page}/`;
+
+      console.log(`📄 Fetching page ${page}...`);
+
+      const entries = await fetchVenuePage(pageUrl);
+      allEntries.push(...entries);
+    }
+
+    console.log(
+      `📋 Found ${allEntries.length} total venue entries.`
+    );
 
     // -----------------------------------
-    // 3. Get existing notices
+    // 3. Get existing venue URLs
     // -----------------------------------
 
     const {
-      data: existingNotices,
+      data: existingVenues,
       error: existingError,
     } = await supabase
-      .from("notices")
+      .from("exam_venues")
       .select("url");
 
     if (existingError) {
@@ -311,46 +427,70 @@ async function checkNotices() {
     }
 
     const existingUrls = new Set(
-      (existingNotices || []).map(
-        (notice) => notice.url
-      )
+      (existingVenues || []).map((venue) => venue.url)
     );
 
     // -----------------------------------
-    // 4. Find NEW notices
+    // 4. Find NEW venue entries
     // -----------------------------------
 
-    const newNotices = notices.filter(
-      (notice) => !existingUrls.has(notice.url)
+    const newVenues = allEntries.filter(
+      (venue) => !existingUrls.has(venue.url)
     );
 
     console.log(
-      `🆕 New notices: ${newNotices.length}`
+      `🆕 New venue entries: ${newVenues.length}`
     );
 
     // -----------------------------------
     // 5. Nothing new
     // -----------------------------------
 
-    if (newNotices.length === 0) {
-      console.log("✅ No new notices.");
+    if (newVenues.length === 0) {
+      console.log("✅ No new venue entries.");
       return;
     }
 
     // -----------------------------------
-    // 6. Save new notices
+    // 6. DRY RUN
+    // -----------------------------------
+
+    if (DRY_RUN) {
+      console.log("");
+      console.log(
+        "🧪 New venue entries detected, but nothing will be saved or emailed."
+      );
+
+      for (const venue of newVenues) {
+        console.log(`🏫 ${venue.title}`);
+        console.log(`🔗 ${venue.url}`);
+        console.log(
+          "🧪 DRY RUN: Would save this venue and notify subscribed users."
+        );
+      }
+
+      console.log("");
+      console.log(
+        "🧪 DRY RUN completed. No venue emails were sent."
+      );
+
+      return;
+    }
+
+    // -----------------------------------
+    // 7. Save new venue entries
     // -----------------------------------
 
     const {
-      data: insertedNotices,
+      data: insertedVenues,
       error: insertError,
     } = await supabase
-      .from("notices")
+      .from("exam_venues")
       .insert(
-        newNotices.map((notice) => ({
-          title: notice.title,
-          url: notice.url,
-          published_date: notice.publishedDate,
+        newVenues.map((venue) => ({
+          title: venue.title,
+          url: venue.url,
+          published_date: venue.publishedDate,
         }))
       )
       .select("id, title, url, published_date");
@@ -360,46 +500,44 @@ async function checkNotices() {
     }
 
     console.log(
-      "✅ New notices saved to Supabase."
+      "✅ New venue entries saved to Supabase."
     );
 
     // -----------------------------------
-    // 6b. Detect PDFs on individual
+    // 7b. Detect PDFs on individual
     //     post pages and store URLs
     // -----------------------------------
 
     console.log("📄 Detecting PDFs...");
 
-    for (const notice of insertedNotices || []) {
-      const pdfUrl = await findPdfUrl(notice.url);
+    for (const venue of insertedVenues || []) {
+      const pdfUrl = await findPdfUrl(venue.url);
 
       if (pdfUrl) {
         console.log(
-          `📎 PDF found for: ${notice.title}`
+          `📎 PDF found for: ${venue.title}`
         );
 
         const { error: pdfUpdateError } =
           await supabase
-            .from("notices")
+            .from("exam_venues")
             .update({ pdf_url: pdfUrl })
-            .eq("id", notice.id);
+            .eq("id", venue.id);
 
         if (pdfUpdateError) {
           console.error(
-            `⚠️ Failed to store PDF URL for ${notice.title}`,
+            `⚠️ Failed to store PDF URL for ${venue.title}`,
             pdfUpdateError
           );
         }
 
-        // Attach pdfUrl to the inserted object
-        // for the notification loop below
-        (notice as Record<string, unknown>).pdf_url =
+        (venue as Record<string, unknown>).pdf_url =
           pdfUrl;
       }
     }
 
     // -----------------------------------
-    // 7. Get notice subscribers
+    // 8. Get venue subscribers
     // -----------------------------------
 
     const {
@@ -407,35 +545,49 @@ async function checkNotices() {
       error: subscriberError,
     } = await supabase
       .from("subscribers")
-      .select("id, email, phone_number, whatsapp_enabled")
-      .eq("notice_enabled", true);
+      .select(
+        "id, email, phone_number, whatsapp_enabled"
+      )
+      .eq("venue_enabled", true);
 
     if (subscriberError) {
       throw subscriberError;
     }
 
     console.log(
-      `👥 Notice subscribers: ${
+      `👥 Venue subscribers: ${
         subscribers?.length || 0
       }`
     );
 
     if (!subscribers || subscribers.length === 0) {
       console.log(
-        "⚠️ No users are subscribed to notice notifications."
+        "⚠️ No users are subscribed to venue notifications."
       );
 
       return;
     }
 
     // -----------------------------------
-    // 8. Send notifications
+    // 9. Send notifications
     // -----------------------------------
 
-    for (const notice of insertedNotices || []) {
+    for (const venue of insertedVenues || []) {
       console.log("");
-      console.log(`📢 ${notice.title}`);
-      console.log(`🔗 ${notice.url}`);
+      console.log(`🏫 ${venue.title}`);
+      console.log(`🔗 ${venue.url}`);
+
+      // Find the matching excerpt from newVenues
+      const match = newVenues.find(
+        (v) => v.url === venue.url
+      );
+
+      const venueWithExcerpt: VenueEntry = {
+        title: venue.title,
+        url: venue.url,
+        publishedDate: venue.published_date,
+        excerpt: match?.excerpt || "",
+      };
 
       for (const subscriber of subscribers) {
 
@@ -450,7 +602,7 @@ async function checkNotices() {
           .from("notification_logs")
           .select("id")
           .eq("subscriber_id", subscriber.id)
-          .eq("notice_id", notice.id)
+          .eq("venue_id", venue.id)
           .eq("channel", "email")
           .maybeSingle();
 
@@ -468,7 +620,7 @@ async function checkNotices() {
           .from("notification_logs")
           .select("id")
           .eq("subscriber_id", subscriber.id)
-          .eq("notice_id", notice.id)
+          .eq("venue_id", venue.id)
           .eq("channel", "whatsapp")
           .maybeSingle();
 
@@ -495,45 +647,35 @@ async function checkNotices() {
 
         if (!emailSent) {
           try {
-            if (DRY_RUN) {
-              console.log(
-                `🧪 DRY RUN: Would send email to ${subscriber.email}`
-              );
-            } else {
-              await sendNotificationEmail(
-                subscriber.email,
-                {
-                  title: notice.title,
-                  url: notice.url,
-                  publishedDate: notice.published_date,
-                },
-                (notice as Record<string, unknown>)
-                  .pdf_url as string | null
-              );
+            await sendVenueEmail(
+              subscriber.email,
+              venueWithExcerpt,
+              (venue as Record<string, unknown>)
+                .pdf_url as string | null
+            );
 
-              console.log(
-                `📧 Email sent to ${subscriber.email}`
+            console.log(
+              `📧 Email sent to ${subscriber.email}`
+            );
+
+            const { error: logInsertError } =
+              await supabase
+                .from("notification_logs")
+                .insert({
+                  subscriber_id: subscriber.id,
+                  venue_id: venue.id,
+                  channel: "email",
+                });
+
+            if (logInsertError) {
+              console.error(
+                `⚠️ Failed to log venue email for ${subscriber.email}`,
+                logInsertError
               );
-
-              const { error: logInsertError } =
-                await supabase
-                  .from("notification_logs")
-                  .insert({
-                    subscriber_id: subscriber.id,
-                    notice_id: notice.id,
-                    channel: "email",
-                  });
-
-              if (logInsertError) {
-                console.error(
-                  `⚠️ Failed to log notice email for ${subscriber.email}`,
-                  logInsertError
-                );
-              }
             }
           } catch (emailError) {
             console.error(
-              `❌ Failed to send email to ${subscriber.email}`,
+              `❌ Failed to send venue email to ${subscriber.email}`,
               emailError
             );
           }
@@ -544,34 +686,31 @@ async function checkNotices() {
         // -----------------------------------
 
         if (
-          !DRY_RUN &&
           !whatsappSent &&
           subscriber.whatsapp_enabled &&
           subscriber.phone_number
         ) {
           try {
             const pdfUrl =
-              (notice as Record<string, unknown>)
+              (venue as Record<string, unknown>)
                 .pdf_url as string | null;
 
             let sent = false;
 
-            // Try document message first if PDF available
             if (pdfUrl) {
               sent = await sendWhatsAppDocument(
                 subscriber.phone_number,
                 pdfUrl,
-                `📢 ${notice.title}`
+                `🏫 ${venue.title}`
               );
             }
 
-            // Fall back to text message
             if (!sent) {
               const message =
-                formatNoticeWhatsAppMessage({
-                  title: notice.title,
-                  url: notice.url,
-                  publishedDate: notice.published_date,
+                formatVenueWhatsAppMessage({
+                  title: venue.title,
+                  url: venue.url,
+                  publishedDate: venue.published_date,
                 });
 
               sent = await sendWhatsAppMessage(
@@ -585,19 +724,19 @@ async function checkNotices() {
                 `📱 WhatsApp sent to ${subscriber.phone_number}`
               );
 
-              const { error: logInsertError } =
+              const { error: waLogError } =
                 await supabase
                   .from("notification_logs")
                   .insert({
                     subscriber_id: subscriber.id,
-                    notice_id: notice.id,
+                    venue_id: venue.id,
                     channel: "whatsapp",
                   });
 
-              if (logInsertError) {
+              if (waLogError) {
                 console.error(
-                  `⚠️ Failed to log notice WhatsApp for ${subscriber.email}`,
-                  logInsertError
+                  `⚠️ Failed to log venue WhatsApp for ${subscriber.email}`,
+                  waLogError
                 );
               }
             }
@@ -613,15 +752,12 @@ async function checkNotices() {
 
     console.log("");
     console.log(
-      DRY_RUN
-        ? "🧪 DRY RUN completed. No emails were sent."
-        : "🎉 Notification process completed."
+      "🎉 Venue notification process completed."
     );
-
   } catch (error) {
     console.error("❌ Error:", error);
     process.exit(1);
   }
 }
 
-checkNotices();
+checkVenues();

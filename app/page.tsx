@@ -67,8 +67,9 @@ export default function HomePage() {
 
             {/* Description */}
             <p className="mt-8 max-w-xl text-lg leading-8 text-slate-400">
-              Get notified by email when new university notices and
-              examination results are published.
+              Get notified by email or WhatsApp when new university
+              notices, examination results, and venue updates are
+              published.
             </p>
 
             {/* Feature Cards */}
@@ -100,6 +101,36 @@ export default function HomePage() {
 
                 <p className="mt-2 text-sm leading-6 text-slate-400">
                   Know when new results are published.
+                </p>
+              </div>
+
+              {/* Exam Venue */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 transition hover:border-blue-500/40">
+                <div className="mb-5 text-2xl">
+                  🏫
+                </div>
+
+                <h3 className="text-lg font-bold">
+                  Exam Venue
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Get venue and exam hall assignment updates.
+                </p>
+              </div>
+
+              {/* WhatsApp */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 transition hover:border-blue-500/40">
+                <div className="mb-5 text-2xl">
+                  💬
+                </div>
+
+                <h3 className="text-lg font-bold">
+                  WhatsApp Alerts
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Receive notifications directly on WhatsApp.
                 </p>
               </div>
 
@@ -188,6 +219,23 @@ export default function HomePage() {
                   </p>
                 </div>
               </div>
+
+              {/* Venue */}
+              <div className="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-600 text-sm">
+                  ✓
+                </div>
+
+                <div>
+                  <h4 className="font-semibold">
+                    Examination Venue
+                  </h4>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Venue and exam hall assignment updates
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Main CTA */}
@@ -227,13 +275,14 @@ export default function HomePage() {
               HOW IT WORKS
             </p>
 
-            <h2 className="mt-3 text-3xl font-bold">
+              <h2 className="mt-3 text-3xl font-bold">
               Simple. Automatic. Reliable.
             </h2>
 
             <p className="mx-auto mt-4 max-w-2xl text-slate-400">
               Set up your account once and let WUSL Notice Alert keep
-              watch for important university updates.
+              watch for important university updates via email or
+              WhatsApp.
             </p>
           </div>
 
@@ -265,7 +314,7 @@ export default function HomePage() {
 
               <p className="mt-3 leading-7 text-slate-400">
                 Select whether you want university notices, examination
-                results, or both.
+                results, exam venue updates, or all three.
               </p>
             </div>
 
@@ -280,8 +329,8 @@ export default function HomePage() {
               </h3>
 
               <p className="mt-3 leading-7 text-slate-400">
-                Receive an email when a new university update is
-                published.
+                Get notified via email or WhatsApp when a new
+                university update is published.
               </p>
             </div>
           </div>

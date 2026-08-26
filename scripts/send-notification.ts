@@ -1,6 +1,10 @@
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
+import {
+  sendWhatsAppMessage,
+  formatNoticeWhatsAppMessage,
+} from "../lib/whatsapp";
 
 dotenv.config({ path: ".env.local" });
 
@@ -42,7 +46,7 @@ async function sendNotification() {
 
   const { data: subscribers, error } = await supabase
     .from("subscribers")
-    .select("email")
+    .select("email, phone_number, whatsapp_enabled")
     .eq("notice_enabled", true);
 
   if (error) {
@@ -59,6 +63,7 @@ async function sendNotification() {
   const testNotice = {
     title: "TEST - New WUSL Notice",
     url: "https://fas.wyb.ac.lk/notices/",
+    publishedDate: null,
   };
 
   for (const subscriber of subscribers) {
@@ -100,6 +105,33 @@ This is a test notification from WUSL Notice Alert 2.0.`,
     });
 
     console.log(`✅ Email sent to ${subscriber.email}`);
+
+    // Send WhatsApp notification
+    if (
+      subscriber.whatsapp_enabled &&
+      subscriber.phone_number
+    ) {
+      try {
+        const message =
+          formatNoticeWhatsAppMessage(testNotice);
+
+        const sent = await sendWhatsAppMessage(
+          subscriber.phone_number,
+          message
+        );
+
+        if (sent) {
+          console.log(
+            `📱 WhatsApp sent to ${subscriber.phone_number}`
+          );
+        }
+      } catch (waError) {
+        console.error(
+          `❌ Failed to send WhatsApp to ${subscriber.phone_number}`,
+          waError
+        );
+      }
+    }
   }
 }
 

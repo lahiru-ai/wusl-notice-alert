@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function SuccessPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-white">
@@ -16,12 +18,12 @@ export default function SuccessPage() {
           are published.
         </p>
 
-        <a
+        <Link
           href="/"
           className="mt-8 inline-block rounded-xl bg-blue-600 px-6 py-3 font-semibold transition hover:bg-blue-500"
         >
           Back to Home
-        </a>
+        </Link>
       </div>
     </main>
   );

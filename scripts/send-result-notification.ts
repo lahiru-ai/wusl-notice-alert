@@ -2,6 +2,10 @@ import dotenv from "dotenv";
 import path from "path";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
+import {
+  sendWhatsAppMessage,
+  formatResultWhatsAppMessage,
+} from "../lib/whatsapp";
 
 dotenv.config({
   path: path.resolve(process.cwd(), ".env.local"),
@@ -83,7 +87,7 @@ async function sendResultNotification() {
       error: subscriberError,
     } = await supabase
       .from("subscribers")
-      .select("email")
+      .select("email, phone_number, whatsapp_enabled")
       .eq("result_enabled", true);
 
     if (subscriberError) {
@@ -193,6 +197,37 @@ to WUSL examination result notifications.
       console.log(
         `📧 Email sent to ${subscriber.email}`
       );
+
+      // Send WhatsApp notification
+      if (
+        subscriber.whatsapp_enabled &&
+        subscriber.phone_number
+      ) {
+        try {
+          const message =
+            formatResultWhatsAppMessage({
+              title: result.title,
+              url: result.url,
+              publishedDate: result.published_date,
+            });
+
+          const sent = await sendWhatsAppMessage(
+            subscriber.phone_number,
+            message
+          );
+
+          if (sent) {
+            console.log(
+              `📱 WhatsApp sent to ${subscriber.phone_number}`
+            );
+          }
+        } catch (waError) {
+          console.error(
+            `❌ Failed to send WhatsApp to ${subscriber.phone_number}`,
+            waError
+          );
+        }
+      }
     }
 
     console.log("");

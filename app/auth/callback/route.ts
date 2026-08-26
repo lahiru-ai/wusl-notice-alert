@@ -106,6 +106,8 @@ export async function GET(request: Request) {
         email: user.email,
         notice_enabled: true,
         result_enabled: true,
+        venue_enabled: true,
+        whatsapp_enabled: false,
       });
 
     if (insertError) {

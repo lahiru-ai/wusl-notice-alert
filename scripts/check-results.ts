@@ -1,6 +1,12 @@
 import * as cheerio from "cheerio";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
+import {
+  sendWhatsAppMessage,
+  sendWhatsAppDocument,
+  formatResultWhatsAppMessage,
+} from "../lib/whatsapp";
+import { findPdfUrl, fetchPdfBuffer } from "../lib/pdf";
 
 const RESULTS_URL = "https://fas.wyb.ac.lk/results/";
 
@@ -70,12 +76,54 @@ type Result = {
 
 async function sendResultEmail(
   email: string,
-  result: Result
+  result: Result,
+  pdfUrl?: string | null
 ) {
+  let attachments: nodemailer.SendMailOptions["attachments"] = [];
+
+  if (pdfUrl) {
+    const pdfBuffer = await fetchPdfBuffer(pdfUrl);
+
+    if (pdfBuffer) {
+      attachments = [
+        {
+          filename: "result.pdf",
+          content: pdfBuffer,
+        },
+      ];
+    }
+  }
+
+  const pdfLinkHtml = pdfUrl
+    ? `
+          <p style="margin-top: 15px;">
+            <a
+              href="${pdfUrl}"
+              style="
+                display: inline-block;
+                padding: 10px 18px;
+                background: #059669;
+                color: white;
+                text-decoration: none;
+                border-radius: 8px;
+                font-size: 14px;
+              "
+            >
+              Download Official PDF
+            </a>
+          </p>
+    `
+    : "";
+
+  const pdfLinkText = pdfUrl
+    ? `\nDownload the official PDF:\n${pdfUrl}\n`
+    : "";
+
   await transporter.sendMail({
     from: `"WUSL Notice Alert" <${smtpUser}>`,
     to: email,
     subject: `🎓 New WUSL Examination Result: ${result.title}`,
+    attachments,
 
     text: `
 A new examination result has been published.
@@ -84,7 +132,7 @@ ${result.title}
 
 Published date:
 ${result.publishedDate || "Not available"}
-
+${pdfLinkText}
 View the result:
 ${result.url}
 
@@ -124,6 +172,8 @@ You are receiving this email because you subscribed to WUSL Notice Alert.
             ${result.publishedDate || "Not available"}
           </p>
 
+          ${pdfLinkHtml}
+
           <p style="margin-top: 25px;">
             <a
               href="${result.url}"
@@ -136,7 +186,7 @@ You are receiving this email because you subscribed to WUSL Notice Alert.
                 border-radius: 8px;
               "
             >
-              View Examination Result →
+              View Examination Result
             </a>
           </p>
 
@@ -310,6 +360,39 @@ async function checkResults() {
     );
 
     // -----------------------------------
+    // 7b. Detect PDFs on individual
+    //     post pages and store URLs
+    // -----------------------------------
+
+    console.log("📄 Detecting PDFs...");
+
+    for (const result of insertedResults || []) {
+      const pdfUrl = await findPdfUrl(result.url);
+
+      if (pdfUrl) {
+        console.log(
+          `📎 PDF found for: ${result.title}`
+        );
+
+        const { error: pdfUpdateError } =
+          await supabase
+            .from("results")
+            .update({ pdf_url: pdfUrl })
+            .eq("id", result.id);
+
+        if (pdfUpdateError) {
+          console.error(
+            `⚠️ Failed to store PDF URL for ${result.title}`,
+            pdfUpdateError
+          );
+        }
+
+        (result as Record<string, unknown>).pdf_url =
+          pdfUrl;
+      }
+    }
+
+    // -----------------------------------
     // 8. Get result subscribers
     // -----------------------------------
 
@@ -318,7 +401,7 @@ async function checkResults() {
       error: subscriberError,
     } = await supabase
       .from("subscribers")
-      .select("id, email")
+      .select("id, email, phone_number, whatsapp_enabled")
       .eq("result_enabled", true);
 
     if (subscriberError) {
@@ -351,76 +434,166 @@ async function checkResults() {
       for (const subscriber of subscribers) {
 
         // -----------------------------------
-        // Check notification log
+        // Per-channel dedup check
         // -----------------------------------
 
         const {
-          data: existingLog,
-          error: logCheckError,
+          data: emailLog,
+          error: emailLogError,
         } = await supabase
           .from("notification_logs")
           .select("id")
           .eq("subscriber_id", subscriber.id)
           .eq("result_id", result.id)
+          .eq("channel", "email")
           .maybeSingle();
 
-        if (logCheckError) {
-          throw logCheckError;
+        if (emailLogError) {
+          console.error(
+            `⚠️ Failed to check email log for ${subscriber.email}`,
+            emailLogError
+          );
         }
 
-        if (existingLog) {
+        const {
+          data: whatsappLog,
+          error: whatsappLogError,
+        } = await supabase
+          .from("notification_logs")
+          .select("id")
+          .eq("subscriber_id", subscriber.id)
+          .eq("result_id", result.id)
+          .eq("channel", "whatsapp")
+          .maybeSingle();
+
+        if (whatsappLogError) {
+          console.error(
+            `⚠️ Failed to check WhatsApp log for ${subscriber.email}`,
+            whatsappLogError
+          );
+        }
+
+        const emailSent = !!emailLog;
+        const whatsappSent = !!whatsappLog;
+
+        if (emailSent && whatsappSent) {
           console.log(
             `⏭️ Already sent to ${subscriber.email}`
           );
-
           continue;
         }
 
         // -----------------------------------
-        // Send email
+        // Send email if not already sent
         // -----------------------------------
 
-        try {
-          await sendResultEmail(
-            subscriber.email,
-            {
-              id: result.id,
-              title: result.title,
-              url: result.url,
-              publishedDate: result.published_date,
+        if (!emailSent) {
+          try {
+            await sendResultEmail(
+              subscriber.email,
+              {
+                id: result.id,
+                title: result.title,
+                url: result.url,
+                publishedDate: result.published_date,
+              },
+              (result as Record<string, unknown>)
+                .pdf_url as string | null
+            );
+
+            console.log(
+              `📧 Email sent to ${subscriber.email}`
+            );
+
+            const {
+              error: logInsertError,
+            } = await supabase
+              .from("notification_logs")
+              .insert({
+                subscriber_id: subscriber.id,
+                result_id: result.id,
+                channel: "email",
+              });
+
+            if (logInsertError) {
+              console.error(
+                `⚠️ Failed to log result email for ${subscriber.email}`,
+                logInsertError
+              );
             }
-          );
-
-          console.log(
-            `📧 Email sent to ${subscriber.email}`
-          );
-
-          // -----------------------------------
-          // Record successful notification
-          // -----------------------------------
-
-          const {
-            error: logInsertError,
-          } = await supabase
-            .from("notification_logs")
-            .insert({
-              subscriber_id: subscriber.id,
-              result_id: result.id,
-            });
-
-          if (logInsertError) {
-            throw logInsertError;
+          } catch (emailError) {
+            console.error(
+              `❌ Failed to send result email to ${subscriber.email}`,
+              emailError
+            );
           }
+        }
 
-          console.log(
-            `📝 Notification logged for ${subscriber.email}`
-          );
+        // -----------------------------------
+        // Send WhatsApp if not already sent
+        // -----------------------------------
 
-        } catch (emailError) {
-          console.error(
-            `❌ Failed to send result email to ${subscriber.email}`,
-            emailError
-          );
+        if (
+          !whatsappSent &&
+          subscriber.whatsapp_enabled &&
+          subscriber.phone_number
+        ) {
+          try {
+            const pdfUrl =
+              (result as Record<string, unknown>)
+                .pdf_url as string | null;
+
+            let sent = false;
+
+            if (pdfUrl) {
+              sent = await sendWhatsAppDocument(
+                subscriber.phone_number,
+                pdfUrl,
+                `🎓 ${result.title}`
+              );
+            }
+
+            if (!sent) {
+              const message =
+                formatResultWhatsAppMessage({
+                  title: result.title,
+                  url: result.url,
+                  publishedDate: result.published_date,
+                });
+
+              sent = await sendWhatsAppMessage(
+                subscriber.phone_number,
+                message
+              );
+            }
+
+            if (sent) {
+              console.log(
+                `📱 WhatsApp sent to ${subscriber.phone_number}`
+              );
+
+              const { error: waLogError } =
+                await supabase
+                  .from("notification_logs")
+                  .insert({
+                    subscriber_id: subscriber.id,
+                    result_id: result.id,
+                    channel: "whatsapp",
+                  });
+
+              if (waLogError) {
+                console.error(
+                  `⚠️ Failed to log result WhatsApp for ${subscriber.email}`,
+                  waLogError
+                );
+              }
+            }
+          } catch (waError) {
+            console.error(
+              `❌ Failed to send WhatsApp to ${subscriber.phone_number}`,
+              waError
+            );
+          }
         }
       }
     }
