@@ -104,6 +104,7 @@ export async function GET(request: Request) {
       .insert({
         user_id: user.id,
         email: user.email,
+        email_enabled: true,
         notice_enabled: true,
         result_enabled: true,
         venue_enabled: true,

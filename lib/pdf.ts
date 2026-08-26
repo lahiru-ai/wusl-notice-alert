@@ -3,7 +3,7 @@ import * as cheerio from "cheerio";
 const PDF_FETCH_TIMEOUT_MS = 10_000;
 
 // -----------------------------------
-// Find the first PDF URL on a
+// Find ALL unique PDF URLs on a
 // WordPress post page. Scans the
 // entry content for direct .pdf
 // links, dFlip embeds, and
@@ -11,9 +11,9 @@ const PDF_FETCH_TIMEOUT_MS = 10_000;
 // Never downloads the PDF itself.
 // -----------------------------------
 
-export async function findPdfUrl(
+export async function findAllPdfUrls(
   postUrl: string
-): Promise<string | null> {
+): Promise<string[]> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(
@@ -27,28 +27,34 @@ export async function findPdfUrl(
 
     clearTimeout(timeout);
 
-    if (!response.ok) return null;
+    if (!response.ok) return [];
 
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // 1. Direct <a href="...pdf"> links
-    let pdfUrl = findDirectPdfLinks($, postUrl);
+    const urls: string[] = [
+      ...findAllDirectPdfLinks($, postUrl),
+      ...findAllDflipPdf($, postUrl),
+      ...findAllIframePdf($, postUrl),
+    ];
 
-    // 2. dFlip embeds: data-pdf attribute
-    if (!pdfUrl) {
-      pdfUrl = findDflipPdf($, postUrl);
-    }
-
-    // 3. Iframe embeds pointing to PDFs
-    if (!pdfUrl) {
-      pdfUrl = findIframePdf($, postUrl);
-    }
-
-    return pdfUrl;
+    const unique = [...new Set(urls)];
+    return unique;
   } catch {
-    return null;
+    return [];
   }
+}
+
+// -----------------------------------
+// Convenience: return only the first
+// PDF URL (or null).
+// -----------------------------------
+
+export async function findPdfUrl(
+  postUrl: string
+): Promise<string | null> {
+  const urls = await findAllPdfUrls(postUrl);
+  return urls[0] ?? null;
 }
 
 // -----------------------------------
@@ -83,17 +89,15 @@ export async function fetchPdfBuffer(
 }
 
 // -----------------------------------
-// Helpers
+// Helpers — collect all URLs
 // -----------------------------------
 
-function findDirectPdfLinks(
+function findAllDirectPdfLinks(
   $: cheerio.CheerioAPI,
   baseUrl: string
-): string | null {
-  let found: string | null = null;
+): string[] {
+  const found: string[] = [];
 
-  // Search within entry content first,
-  // then fall back to full page
   const scopes = [
     $(".entry-content"),
     $(".elementor-widget-theme-post-content"),
@@ -101,7 +105,7 @@ function findDirectPdfLinks(
   ];
 
   for (const scope of scopes) {
-    if (found) break;
+    if (found.length > 0) break;
 
     scope.find("a").each((_, el) => {
       const href = $(el).attr("href");
@@ -109,20 +113,16 @@ function findDirectPdfLinks(
 
       const lower = href.toLowerCase();
 
-      // Direct PDF link
-      if (lower.endsWith(".pdf")) {
-        found = new URL(href, baseUrl).href;
-        return false;
-      }
-
-      // WordPress download links with
-      // attachment_id param pointing to PDF
       if (
-        lower.includes("/wp-content/uploads/") &&
-        lower.includes(".pdf")
+        lower.endsWith(".pdf") ||
+        (lower.includes("/wp-content/uploads/") &&
+          lower.includes(".pdf"))
       ) {
-        found = new URL(href, baseUrl).href;
-        return false;
+        try {
+          found.push(new URL(href, baseUrl).href);
+        } catch {
+          // malformed URL — skip
+        }
       }
     });
   }
@@ -130,43 +130,45 @@ function findDirectPdfLinks(
   return found;
 }
 
-function findDflipPdf(
+function findAllDflipPdf(
   $: cheerio.CheerioAPI,
   baseUrl: string
-): string | null {
-  let found: string | null = null;
+): string[] {
+  const found: string[] = [];
 
-  // dFlip stores PDF URL in data-pdf
-  // or data-source attribute
-  $(
-    "[data-pdf], [data-source], .dflip"
-  ).each((_, el) => {
-    if (found) return;
+  $("[data-pdf], [data-source], .dflip").each(
+    (_, el) => {
+      const pdfAttr =
+        $(el).attr("data-pdf") ||
+        $(el).attr("data-source");
 
-    const pdfAttr =
-      $(el).attr("data-pdf") ||
-      $(el).attr("data-source");
-
-    if (pdfAttr) {
-      found = new URL(pdfAttr, baseUrl).href;
+      if (pdfAttr) {
+        try {
+          found.push(new URL(pdfAttr, baseUrl).href);
+        } catch {
+          // malformed URL — skip
+        }
+      }
     }
-  });
+  );
 
   return found;
 }
 
-function findIframePdf(
+function findAllIframePdf(
   $: cheerio.CheerioAPI,
   baseUrl: string
-): string | null {
-  let found: string | null = null;
+): string[] {
+  const found: string[] = [];
 
   $("iframe").each((_, el) => {
-    if (found) return;
-
     const src = $(el).attr("src");
     if (src && src.toLowerCase().includes(".pdf")) {
-      found = new URL(src, baseUrl).href;
+      try {
+        found.push(new URL(src, baseUrl).href);
+      } catch {
+        // malformed URL — skip
+      }
     }
   });
 

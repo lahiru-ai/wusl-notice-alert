@@ -6,7 +6,10 @@ import {
   sendWhatsAppDocument,
   formatNoticeWhatsAppMessage,
 } from "../lib/whatsapp";
-import { findPdfUrl, fetchPdfBuffer } from "../lib/pdf";
+import {
+  findAllPdfUrls,
+  fetchPdfBuffer,
+} from "../lib/pdf";
 
 const NOTICES_URL = "https://fas.wyb.ac.lk/notices/";
 
@@ -24,6 +27,8 @@ const smtpHost = process.env.SMTP_HOST;
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpUser = process.env.SMTP_USER;
 const smtpPassword = process.env.SMTP_PASSWORD;
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${process.env.VERCEL_URL}`;
 
 const DRY_RUN = process.env.DRY_RUN === "true";
 
@@ -77,28 +82,40 @@ async function sendNotificationEmail(
     url: string;
     publishedDate: string | null;
   },
-  pdfUrl?: string | null
+  pdfUrls?: string[]
 ) {
-  let attachments: nodemailer.SendMailOptions["attachments"] = [];
+  const urls = pdfUrls || [];
 
-  if (pdfUrl) {
-    const pdfBuffer = await fetchPdfBuffer(pdfUrl);
+  const attachments: nodemailer.SendMailOptions["attachments"] = [];
 
-    if (pdfBuffer) {
-      attachments = [
-        {
-          filename: "notice.pdf",
-          content: pdfBuffer,
-        },
-      ];
+  for (let i = 0; i < urls.length; i++) {
+    const buffer = await fetchPdfBuffer(urls[i]);
+
+    if (buffer) {
+      attachments.push({
+        filename: urls.length === 1
+          ? "notice.pdf"
+          : `notice-${i + 1}.pdf`,
+        content: buffer,
+      });
+      console.log(
+        `📎 Attached PDF ${i + 1}/${urls.length}: ${urls[i]}`
+      );
+    } else {
+      console.warn(
+        `⚠️ Failed to download PDF ${i + 1}/${urls.length}: ${urls[i]}`
+      );
     }
   }
 
-  const pdfLinkHtml = pdfUrl
-    ? `
+  const pdfLinkHtml =
+    urls.length > 0
+      ? urls
+          .map(
+            (url, i) => `
           <p style="margin-top: 15px;">
             <a
-              href="${pdfUrl}"
+              href="${url}"
               style="
                 display: inline-block;
                 padding: 10px 18px;
@@ -107,17 +124,25 @@ async function sendNotificationEmail(
                 text-decoration: none;
                 border-radius: 8px;
                 font-size: 14px;
+                margin-right: 8px;
               "
             >
-              Download Official PDF
+              Download PDF ${urls.length > 1 ? i + 1 : ""}
             </a>
-          </p>
-    `
-    : "";
+          </p>`
+          )
+          .join("")
+      : "";
 
-  const pdfLinkText = pdfUrl
-    ? `\nDownload the official PDF:\n${pdfUrl}\n`
-    : "";
+  const pdfLinkText =
+    urls.length > 0
+      ? urls
+          .map(
+            (url, i) =>
+              `Download PDF${urls.length > 1 ? ` ${i + 1}` : ""}:\n${url}`
+          )
+          .join("\n") + "\n"
+      : "";
 
   await transporter.sendMail({
     from: `"WUSL Notice Alert" <${smtpUser}>`,
@@ -136,7 +161,14 @@ ${pdfLinkText}
 View the notice:
 ${notice.url}
 
-You are receiving this email because you subscribed to WUSL Notice Alert.
+───────────────────────────────────────
+
+Manage Notifications →
+${appUrl}/dashboard
+
+───────────────────────────────────────
+
+WUSL Notice Alert System
 `,
 
     html: `
@@ -196,9 +228,30 @@ You are receiving this email because you subscribed to WUSL Notice Alert.
             border-top: 1px solid #ddd;
           ">
 
-          <p style="font-size: 12px; color: #777;">
-            You are receiving this email because you subscribed
-            to WUSL Notice Alert.
+          <p style="margin-top: 20px; text-align: center;">
+            <a
+              href="${appUrl}/dashboard"
+              style="
+                display: inline-block;
+                padding: 10px 20px;
+                background: #2563eb;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-size: 13px;
+              "
+            >
+              Manage Notifications →
+            </a>
+          </p>
+
+          <p style="
+            font-size: 12px;
+            color: #999;
+            text-align: center;
+            margin-top: 16px;
+          ">
+            WUSL Notice Alert System
           </p>
 
         </div>
@@ -371,30 +424,30 @@ async function checkNotices() {
     console.log("📄 Detecting PDFs...");
 
     for (const notice of insertedNotices || []) {
-      const pdfUrl = await findPdfUrl(notice.url);
+      const pdfUrls = await findAllPdfUrls(notice.url);
 
-      if (pdfUrl) {
+      if (pdfUrls.length > 0) {
         console.log(
-          `📎 PDF found for: ${notice.title}`
+          `📎 ${pdfUrls.length} PDF(s) found for: ${notice.title}`
         );
+
+        const pdfUrlsJson = JSON.stringify(pdfUrls);
 
         const { error: pdfUpdateError } =
           await supabase
             .from("notices")
-            .update({ pdf_url: pdfUrl })
+            .update({ pdf_url: pdfUrlsJson })
             .eq("id", notice.id);
 
         if (pdfUpdateError) {
           console.error(
-            `⚠️ Failed to store PDF URL for ${notice.title}`,
+            `⚠️ Failed to store PDF URLs for ${notice.title}`,
             pdfUpdateError
           );
         }
 
-        // Attach pdfUrl to the inserted object
-        // for the notification loop below
-        (notice as Record<string, unknown>).pdf_url =
-          pdfUrl;
+        (notice as Record<string, unknown>).pdf_urls =
+          pdfUrls;
       }
     }
 
@@ -407,7 +460,7 @@ async function checkNotices() {
       error: subscriberError,
     } = await supabase
       .from("subscribers")
-      .select("id, email, phone_number, whatsapp_enabled")
+      .select("id, email, phone_number, whatsapp_enabled, email_enabled")
       .eq("notice_enabled", true);
 
     if (subscriberError) {
@@ -493,7 +546,7 @@ async function checkNotices() {
         // Send email if not already sent
         // -----------------------------------
 
-        if (!emailSent) {
+        if (!emailSent && subscriber.email_enabled !== false) {
           try {
             if (DRY_RUN) {
               console.log(
@@ -508,7 +561,7 @@ async function checkNotices() {
                   publishedDate: notice.published_date,
                 },
                 (notice as Record<string, unknown>)
-                  .pdf_url as string | null
+                  .pdf_urls as string[] | undefined
               );
 
               console.log(
@@ -550,17 +603,17 @@ async function checkNotices() {
           subscriber.phone_number
         ) {
           try {
-            const pdfUrl =
+            const pdfUrls =
               (notice as Record<string, unknown>)
-                .pdf_url as string | null;
+                .pdf_urls as string[] | undefined;
 
             let sent = false;
 
-            // Try document message first if PDF available
-            if (pdfUrl) {
+            // Try document message first if PDFs available
+            if (pdfUrls && pdfUrls.length > 0) {
               sent = await sendWhatsAppDocument(
                 subscriber.phone_number,
-                pdfUrl,
+                pdfUrls[0],
                 `📢 ${notice.title}`
               );
             }

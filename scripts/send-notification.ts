@@ -46,7 +46,7 @@ async function sendNotification() {
 
   const { data: subscribers, error } = await supabase
     .from("subscribers")
-    .select("email, phone_number, whatsapp_enabled")
+    .select("email, phone_number, whatsapp_enabled, email_enabled")
     .eq("notice_enabled", true);
 
   if (error) {
@@ -67,11 +67,12 @@ async function sendNotification() {
   };
 
   for (const subscriber of subscribers) {
-    await transporter.sendMail({
-      from: `"WUSL Notice Alert" <${smtpUser}>`,
-      to: subscriber.email,
-      subject: `📢 ${testNotice.title}`,
-      text: `A new university notice has been published.
+    if (subscriber.email_enabled !== false) {
+      await transporter.sendMail({
+        from: `"WUSL Notice Alert" <${smtpUser}>`,
+        to: subscriber.email,
+        subject: `📢 ${testNotice.title}`,
+        text: `A new university notice has been published.
 
 ${testNotice.title}
 
@@ -79,32 +80,35 @@ View the notice:
 ${testNotice.url}
 
 This is a test notification from WUSL Notice Alert 2.0.`,
-      html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-          <h2>📢 New WUSL Notice</h2>
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+            <h2>📢 New WUSL Notice</h2>
 
-          <h3>${testNotice.title}</h3>
+            <h3>${testNotice.title}</h3>
 
-          <p>
-            A new university notice has been published.
-          </p>
+            <p>
+              A new university notice has been published.
+            </p>
 
-          <p>
-            <a href="${testNotice.url}">
-              View Notice
-            </a>
-          </p>
+            <p>
+              <a href="${testNotice.url}">
+                View Notice
+              </a>
+            </p>
 
-          <hr>
+            <hr>
 
-          <p style="color: #777; font-size: 12px;">
-            This is a test notification from WUSL Notice Alert 2.0.
-          </p>
-        </div>
-      `,
-    });
+            <p style="color: #777; font-size: 12px;">
+              This is a test notification from WUSL Notice Alert 2.0.
+            </p>
+          </div>
+        `,
+      });
 
-    console.log(`✅ Email sent to ${subscriber.email}`);
+      console.log(`✅ Email sent to ${subscriber.email}`);
+    } else {
+      console.log(`⏭️ Skipping email for ${subscriber.email} (email disabled)`);
+    }
 
     // Send WhatsApp notification
     if (

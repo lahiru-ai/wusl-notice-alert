@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase";
 type Subscriber = {
   id: string;
   email: string;
+  email_enabled: boolean;
   notice_enabled: boolean;
   result_enabled: boolean;
   venue_enabled: boolean;
@@ -54,7 +55,7 @@ export default function DashboardPage() {
       const { data, error: subscriberError } = await supabase
         .from("subscribers")
         .select(
-          "id, email, notice_enabled, result_enabled, venue_enabled, whatsapp_enabled, phone_number"
+          "id, email, email_enabled, notice_enabled, result_enabled, venue_enabled, whatsapp_enabled, phone_number"
         )
         .eq("user_id", user.id)
         .maybeSingle();
@@ -76,13 +77,14 @@ export default function DashboardPage() {
           .insert({
             user_id: user.id,
             email: user.email,
+            email_enabled: true,
             notice_enabled: true,
             result_enabled: true,
             venue_enabled: true,
             whatsapp_enabled: false,
           })
           .select(
-            "id, email, notice_enabled, result_enabled, venue_enabled, whatsapp_enabled, phone_number"
+            "id, email, email_enabled, notice_enabled, result_enabled, venue_enabled, whatsapp_enabled, phone_number"
           )
           .single();
 
@@ -688,8 +690,16 @@ export default function DashboardPage() {
               Email Notifications
             </p>
 
-            <p className="mt-2 font-semibold text-green-400">
-              ● Always Active
+            <p
+              className={`mt-2 font-semibold ${
+                subscriber?.email_enabled
+                  ? "text-green-400"
+                  : "text-slate-500"
+              }`}
+            >
+              {subscriber?.email_enabled
+                ? "● Enabled"
+                : "● Disabled"}
             </p>
           </div>
 

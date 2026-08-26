@@ -87,7 +87,7 @@ async function sendResultNotification() {
       error: subscriberError,
     } = await supabase
       .from("subscribers")
-      .select("email, phone_number, whatsapp_enabled")
+      .select("email, phone_number, whatsapp_enabled, email_enabled")
       .eq("result_enabled", true);
 
     if (subscriberError) {
@@ -105,12 +105,13 @@ async function sendResultNotification() {
 
     // Send email
     for (const subscriber of subscribers) {
-      await transporter.sendMail({
-        from: `"WUSL Notice Alert" <${smtpUser}>`,
-        to: subscriber.email,
-        subject: `📊 New WUSL Examination Result: ${result.title}`,
+      if (subscriber.email_enabled !== false) {
+        await transporter.sendMail({
+          from: `"WUSL Notice Alert" <${smtpUser}>`,
+          to: subscriber.email,
+          subject: `📊 New WUSL Examination Result: ${result.title}`,
 
-        text: `
+          text: `
 A new WUSL examination result has been published.
 
 ${result.title}
@@ -125,78 +126,83 @@ You are receiving this email because you subscribed
 to WUSL examination result notifications.
 `,
 
-        html: `
-          <div style="
-            font-family: Arial, sans-serif;
-            max-width: 650px;
-            margin: auto;
-            padding: 30px;
-            background: #f5f7fb;
-          ">
-
+          html: `
             <div style="
-              background: #ffffff;
+              font-family: Arial, sans-serif;
+              max-width: 650px;
+              margin: auto;
               padding: 30px;
-              border-radius: 12px;
+              background: #f5f7fb;
             ">
 
-              <h1 style="color: #2563eb;">
-                📊 New WUSL Examination Result
-              </h1>
-
-              <h2>
-                ${result.title}
-              </h2>
-
-              <p>
-                A new examination result has been published by
-                the Faculty of Applied Sciences,
-                Wayamba University of Sri Lanka.
-              </p>
-
-              <p>
-                <strong>Published date:</strong>
-                ${result.published_date || "Not available"}
-              </p>
-
-              <p style="margin-top: 25px;">
-                <a
-                  href="${result.url}"
-                  style="
-                    display: inline-block;
-                    padding: 12px 20px;
-                    background: #2563eb;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 8px;
-                  "
-                >
-                  View Result →
-                </a>
-              </p>
-
-              <hr style="
-                margin: 30px 0;
-                border: none;
-                border-top: 1px solid #ddd;
+              <div style="
+                background: #ffffff;
+                padding: 30px;
+                border-radius: 12px;
               ">
 
-              <p style="
-                font-size: 12px;
-                color: #777;
-              ">
-                You are receiving this email because you subscribed
-                to WUSL examination result notifications.
-              </p>
+                <h1 style="color: #2563eb;">
+                  📊 New WUSL Examination Result
+                </h1>
 
+                <h2>
+                  ${result.title}
+                </h2>
+
+                <p>
+                  A new examination result has been published by
+                  the Faculty of Applied Sciences,
+                  Wayamba University of Sri Lanka.
+                </p>
+
+                <p>
+                  <strong>Published date:</strong>
+                  ${result.published_date || "Not available"}
+                </p>
+
+                <p style="margin-top: 25px;">
+                  <a
+                    href="${result.url}"
+                    style="
+                      display: inline-block;
+                      padding: 12px 20px;
+                      background: #2563eb;
+                      color: white;
+                      text-decoration: none;
+                      border-radius: 8px;
+                    "
+                  >
+                    View Result →
+                  </a>
+                </p>
+
+                <hr style="
+                  margin: 30px 0;
+                  border: none;
+                  border-top: 1px solid #ddd;
+                ">
+
+                <p style="
+                  font-size: 12px;
+                  color: #777;
+                ">
+                  You are receiving this email because you subscribed
+                  to WUSL examination result notifications.
+                </p>
+
+              </div>
             </div>
-          </div>
-        `,
-      });
+          `,
+        });
 
-      console.log(
-        `📧 Email sent to ${subscriber.email}`
-      );
+        console.log(
+          `📧 Email sent to ${subscriber.email}`
+        );
+      } else {
+        console.log(
+          `⏭️ Skipping email for ${subscriber.email} (email disabled)`
+        );
+      }
 
       // Send WhatsApp notification
       if (

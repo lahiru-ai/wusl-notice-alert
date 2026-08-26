@@ -1,0 +1,2 @@
+ALTER TABLE subscribers
+ADD COLUMN IF NOT EXISTS email_enabled BOOLEAN NOT NULL DEFAULT true;
