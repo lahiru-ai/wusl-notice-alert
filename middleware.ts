@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { isAdminEmail } from "@/lib/admin-config";
+import { isAdminEmail, getAdminEmails } from "@/lib/admin-config";
 
 export const config = {
   matcher: ["/admin/:path*"],
@@ -49,19 +49,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const { getAdminEmails } = await import("@/lib/admin-config");
-  const adminEmails = getAdminEmails();
   const match = isAdminEmail(user.email || "");
-  console.error("[admin-diag]", JSON.stringify({
-    authenticated: true,
-    env_admin_emails_set: !!process.env.ADMIN_EMAILS,
-    env_admin_emails_raw_length: (process.env.ADMIN_EMAILS || "").length,
-    admin_email_count: adminEmails.length,
-    admin_email_match: match,
-  }));
 
   if (!match) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    // TODO: REMOVE THIS DIAGNOSTIC HEADER AFTER DEBUGGING
+    const debugHeader = [
+      `auth=1`,
+      `env=${process.env.ADMIN_EMAILS ? 1 : 0}`,
+      `count=${getAdminEmails().length}`,
+      `match=0`,
+    ].join(";");
+
+    const redirectResponse = NextResponse.redirect(new URL("/dashboard", request.url));
+    redirectResponse.headers.set("X-Admin-Debug", debugHeader);
+    return redirectResponse;
   }
 
   // Check subscriber exists and has is_admin-like access via service-role
