@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
+import {
+  maskPhoneNumber,
+  normalizeWhatsAppNumber,
+} from "@/lib/phone";
 
 type Subscriber = {
   id: string;
@@ -11,8 +15,9 @@ type Subscriber = {
   notice_enabled: boolean;
   result_enabled: boolean;
   venue_enabled: boolean;
-  whatsapp_enabled: boolean;
-  phone_number: string | null;
+  whatsapp_number: string | null;
+  whatsapp_opted_in: boolean;
+  whatsapp_verified: boolean;
 };
 
 export default function DashboardPage() {
@@ -33,9 +38,10 @@ export default function DashboardPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
-  // Phone number editing
-  const [editingPhone, setEditingPhone] = useState(false);
+  // WhatsApp number editing
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [phoneInput, setPhoneInput] = useState("");
+  const [phoneError, setPhoneError] = useState("");
 
   async function loadDashboard() {
     setLoading(true);
@@ -55,7 +61,7 @@ export default function DashboardPage() {
       const { data, error: subscriberError } = await supabase
         .from("subscribers")
         .select(
-          "id, email, email_enabled, notice_enabled, result_enabled, venue_enabled, whatsapp_enabled, phone_number"
+          "id, email, email_enabled, notice_enabled, result_enabled, venue_enabled, whatsapp_number, whatsapp_opted_in, whatsapp_verified"
         )
         .eq("user_id", user.id)
         .maybeSingle();
@@ -81,10 +87,10 @@ export default function DashboardPage() {
             notice_enabled: true,
             result_enabled: true,
             venue_enabled: true,
-            whatsapp_enabled: false,
+            whatsapp_opted_in: false,
           })
           .select(
-            "id, email, email_enabled, notice_enabled, result_enabled, venue_enabled, whatsapp_enabled, phone_number"
+            "id, email, email_enabled, notice_enabled, result_enabled, venue_enabled, whatsapp_number, whatsapp_opted_in, whatsapp_verified"
           )
           .single();
 
@@ -119,7 +125,6 @@ export default function DashboardPage() {
       | "notice_enabled"
       | "result_enabled"
       | "venue_enabled"
-      | "whatsapp_enabled"
   ) {
     if (!subscriber) return;
 
@@ -172,48 +177,96 @@ export default function DashboardPage() {
     }
   }
 
-  async function savePhoneNumber() {
+  async function updateOptIn() {
     if (!subscriber) return;
 
     setSaving(true);
     setMessage("");
     setError("");
 
-    // Basic validation: digits only, 9-15 chars
-    const cleaned = phoneInput.replace(/[\s\-+()]/g, "");
+    const newValue = !subscriber.whatsapp_opted_in;
 
-    if (!/^\d{9,15}$/.test(cleaned)) {
-      setError(
-        "Invalid phone number. Use format: 07XXXXXXXX or 94XXXXXXXX."
-      );
-      setSaving(false);
-      return;
-    }
+    setSubscriber({
+      ...subscriber,
+      whatsapp_opted_in: newValue,
+    });
 
     try {
       const { error } = await supabase
         .from("subscribers")
         .update({
-          phone_number: cleaned,
+          whatsapp_opted_in: newValue,
         })
         .eq("id", subscriber.id);
 
       if (error) {
         console.error(error);
-        setError("Could not save phone number.");
+
+        setSubscriber({
+          ...subscriber,
+          whatsapp_opted_in: !newValue,
+        });
+
+        setError(
+          "Could not update your WhatsApp preference."
+        );
+
+        return;
+      }
+
+      setMessage("WhatsApp preference updated.");
+    } catch (err) {
+      console.error(err);
+
+      setSubscriber({
+        ...subscriber,
+        whatsapp_opted_in: !newValue,
+      });
+
+      setError("Something went wrong.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function savePhoneNumber() {
+    if (!subscriber) return;
+
+    const result = normalizeWhatsAppNumber(phoneInput);
+
+    if (!result.ok) {
+      setPhoneError(result.reason);
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const { error } = await supabase
+        .from("subscribers")
+        .update({
+          whatsapp_number: result.e164,
+        })
+        .eq("id", subscriber.id);
+
+      if (error) {
+        console.error(error);
+        setPhoneError("Could not save your WhatsApp number.");
         return;
       }
 
       setSubscriber({
         ...subscriber,
-        phone_number: cleaned,
+        whatsapp_number: result.e164,
       });
 
-      setEditingPhone(false);
-      setMessage("Phone number saved.");
+      setShowPhoneModal(false);
+      setMessage("WhatsApp number saved.");
     } catch (err) {
       console.error(err);
-      setError("Something went wrong.");
+      setPhoneError("Something went wrong. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -524,102 +577,67 @@ export default function DashboardPage() {
                     </h3>
 
                     <p className="mt-1 text-sm text-slate-500">
-                      Receive notifications via WhatsApp
-                      messages
+                      WhatsApp notifications will be
+                      available soon.
                     </p>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() =>
-                    updateSetting("whatsapp_enabled")
-                  }
-                  className={`relative h-7 w-12 rounded-full transition ${
-                    subscriber?.whatsapp_enabled
-                      ? "bg-blue-600"
-                      : "bg-slate-700"
-                  }`}
-                >
-                  <div
-                    className={`absolute top-1 h-5 w-5 rounded-full bg-white transition ${
-                      subscriber?.whatsapp_enabled
-                        ? "left-6"
-                        : "left-1"
-                    }`}
-                  />
-                </button>
+                <span className="rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-xs font-semibold text-yellow-300">
+                  Coming Soon
+                </span>
               </div>
 
-              {/* Phone number section */}
-              {subscriber?.whatsapp_enabled && (
-                <div className="mt-5 border-t border-slate-800 pt-5">
-                  <label className="mb-2 block text-sm font-medium text-slate-200">
-                    Phone Number
-                  </label>
+              {/* WhatsApp number section */}
+              <div className="mt-5 border-t border-slate-800 pt-5">
+                <label className="mb-2 block text-sm font-medium text-slate-200">
+                  WhatsApp Number
+                </label>
 
-                  {editingPhone ? (
-                    <div className="flex gap-3">
-                      <input
-                        type="tel"
-                        value={phoneInput}
-                        onChange={(e) =>
-                          setPhoneInput(e.target.value)
-                        }
-                        placeholder="07XXXXXXXX or 94XXXXXXXX"
-                        className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white outline-none transition focus:border-blue-500"
-                      />
+                <div className="flex items-center gap-3">
+                  <p className="text-sm text-slate-400">
+                    {subscriber?.whatsapp_number
+                      ? maskPhoneNumber(
+                          subscriber.whatsapp_number
+                        )
+                      : "Not added"}
+                  </p>
 
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={savePhoneNumber}
-                        className="rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
-                      >
-                        Save
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => {
-                          setEditingPhone(false);
-                          setPhoneInput(
-                            subscriber?.phone_number || ""
-                          );
-                        }}
-                        className="rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-300 transition hover:border-slate-500"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <p className="text-sm text-slate-400">
-                        {subscriber?.phone_number
-                          ? subscriber.phone_number
-                          : "No phone number added"}
-                      </p>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingPhone(true);
-                          setPhoneInput(
-                            subscriber?.phone_number || ""
-                          );
-                        }}
-                        className="text-sm text-blue-400 hover:text-blue-300"
-                      >
-                        {subscriber?.phone_number
-                          ? "Edit"
-                          : "Add"}
-                      </button>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhoneInput(
+                        subscriber?.whatsapp_number || ""
+                      );
+                      setPhoneError("");
+                      setShowPhoneModal(true);
+                    }}
+                    className="text-sm text-blue-400 hover:text-blue-300"
+                  >
+                    {subscriber?.whatsapp_number
+                      ? "Edit"
+                      : "Add Number"}
+                  </button>
                 </div>
-              )}
+              </div>
+
+              {/* Opt-in consent */}
+              <label className="mt-5 flex cursor-pointer items-center gap-3 border-t border-slate-800 pt-5">
+                <input
+                  type="checkbox"
+                  checked={Boolean(
+                    subscriber?.whatsapp_opted_in
+                  )}
+                  disabled={saving}
+                  onChange={updateOptIn}
+                  className="h-4 w-4 accent-blue-600"
+                />
+
+                <span className="text-sm text-slate-300">
+                  I want to receive future notifications
+                  via WhatsApp
+                </span>
+              </label>
             </div>
           </div>
         </div>
@@ -708,21 +726,8 @@ export default function DashboardPage() {
               WhatsApp Notifications
             </p>
 
-            <p
-              className={`mt-2 font-semibold ${
-                subscriber?.whatsapp_enabled &&
-                subscriber?.phone_number
-                  ? "text-green-400"
-                  : "text-slate-500"
-              }`}
-            >
-              {subscriber?.whatsapp_enabled &&
-              subscriber?.phone_number
-                ? "● Enabled"
-                : subscriber?.whatsapp_enabled &&
-                  !subscriber?.phone_number
-                ? "● Phone Required"
-                : "● Disabled"}
+            <p className="mt-2 font-semibold text-yellow-400/80">
+              ● Coming Soon
             </p>
           </div>
         </div>
@@ -771,6 +776,65 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {/* ============================================ */}
+      {/* WHATSAPP NUMBER MODAL                        */}
+      {/* ============================================ */}
+
+      {showPhoneModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-7 shadow-2xl">
+            <h3 className="text-xl font-bold">
+              {subscriber?.whatsapp_number
+                ? "Edit WhatsApp Number"
+                : "Add WhatsApp Number"}
+            </h3>
+
+            <p className="mt-3 text-sm text-slate-400">
+              Enter your Sri Lankan mobile number. It will be
+              used to send you WhatsApp notifications once the
+              feature is available.
+            </p>
+
+            <input
+              type="tel"
+              value={phoneInput}
+              onChange={(e) =>
+                setPhoneInput(e.target.value)
+              }
+              placeholder="e.g. 077 123 4567 or +94771234567"
+              className="mt-5 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-500"
+              autoFocus
+            />
+
+            {phoneError && (
+              <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {phoneError}
+              </div>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setShowPhoneModal(false)}
+                className="flex-1 rounded-xl border border-slate-700 px-4 py-3 font-semibold text-slate-300 transition hover:border-slate-500 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={saving}
+                onClick={savePhoneNumber}
+                className="flex-1 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save Number"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ============================================ */}
       {/* DELETE CONFIRMATION MODAL                    */}

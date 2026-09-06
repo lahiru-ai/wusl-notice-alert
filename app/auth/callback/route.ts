@@ -109,6 +109,7 @@ export async function GET(request: Request) {
         result_enabled: true,
         venue_enabled: true,
         whatsapp_enabled: false,
+        whatsapp_opted_in: false,
       });
 
     if (insertError) {
