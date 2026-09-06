@@ -27,7 +27,7 @@ const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpUser = process.env.SMTP_USER;
 const smtpPassword = process.env.SMTP_PASSWORD;
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${process.env.VERCEL_URL}`;
+const appUrl = process.env.NEXT_PUBLIC_APP_URL;
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error(
@@ -38,6 +38,12 @@ if (!supabaseUrl || !supabaseKey) {
 if (!smtpHost || !smtpUser || !smtpPassword) {
   throw new Error(
     "Missing SMTP_HOST, SMTP_USER or SMTP_PASSWORD"
+  );
+}
+
+if (!appUrl) {
+  throw new Error(
+    "Missing NEXT_PUBLIC_APP_URL (used for email links to the dashboard)"
   );
 }
 
